@@ -14,25 +14,15 @@ You should have received a copy of the GNU General Public License
 along with kuberpult.  If not, see <http://www.gnu.org/licenses/>.
 
 Copyright 2021 freiheit.com*/
-import React from 'react';
 import { render } from '@testing-library/react';
+import { App } from './';
 
-import { Spinner } from './';
-
-describe('Spinner', () => {
-    const getNode = (): JSX.Element | any => {
-        // given
-        const defaultProps: any = {
-            children: null,
-        };
-        return <Spinner {...defaultProps} />;
-    };
+describe('App', () => {
+    const getNode = (): JSX.Element | any => <App />;
     const getWrapper = () => render(getNode());
 
-    it('renders the Spinner component', () => {
-        // when
+    it('Renders full app', () => {
         const { container } = getWrapper();
-        // then
-        expect(container.querySelector('.MuiCircularProgress-root')).toBeTruthy();
+        expect(container.textContent).toBe('hello world');
     });
 });
