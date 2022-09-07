@@ -14,8 +14,8 @@ You should have received a copy of the GNU General Public License
 along with kuberpult.  If not, see <http://www.gnu.org/licenses/>.
 
 Copyright 2021 freiheit.com*/
-import { NavigationBar } from '../NavigationBar/NavigationBar';
-import { TopAppBar } from '../TopAppBar/TopAppBar';
+import { NavigationBar } from '../components/NavigationBar/NavigationBar';
+import { TopAppBar } from '../components/TopAppBar/TopAppBar';
 import { PageRoutes } from './PageRoutes';
 import '../../assets/app-v2.scss';
 
