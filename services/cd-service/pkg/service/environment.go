@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"github.com/freiheit-com/kuberpult/services/cd-service/pkg/httperrors"
 
 	"github.com/freiheit-com/kuberpult/pkg/api"
 	"github.com/freiheit-com/kuberpult/services/cd-service/pkg/repository"
@@ -36,7 +37,7 @@ func (e *EnvironmentServiceServer) CreateEnvironment(
 		Environment: in.Environment,
 	})
 	if err != nil {
-		return nil, internalError(ctx, err)
+		return nil, httperrors.InternalError(ctx, err)
 	}
 	return &emptypb.Empty{}, nil
 }
