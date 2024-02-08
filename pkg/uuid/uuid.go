@@ -16,7 +16,12 @@ Copyright 2023 freiheit.com*/
 
 package uuid
 
-import "4d63.com/uuid/uuidv1"
+import (
+	"github.com/onokonem/sillyQueueServer/timeuuid"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+type UUID = timeuuid.UUID // just an alias for convenience
 
 type GenerateUUIDs interface {
 	Generate() string
@@ -26,5 +31,11 @@ type RealUUIDGenerator struct {
 }
 
 func (t RealUUIDGenerator) Generate() string {
-	return uuidv1.Now().String()
+	return timeuuid.TimeUUID().String()
+}
+
+func GetTime(id *UUID) *timestamppb.Timestamp {
+	var ts = id.Time()
+	result := timestamppb.New(ts)
+	return result
 }
