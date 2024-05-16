@@ -20,35 +20,27 @@ import (
 	"fmt"
 	"log"
 	"os"
-
-	rl "github.com/freiheit-com/kuberpult/cli/pkg/release"
 )
 
-func handleRelease(args []string) {
-	parsedArgs, err := rl.ParseArgs(args)
+func RunCLI() {
+	params, other, err := parseArgs(os.Args[1:])
 
 	if err != nil {
-		log.Fatalf("error while parsing command line args, error: %v", err)
+		log.Fatalf("error while parsing command line arguments, error: %v", err)
 	}
 
-	if err = rl.Release("http://localhost:8081/release", parsedArgs); err != nil {
-		log.Fatalf("error on release, error: %v", err)
-	}
-}
-
-func RunCLI() {
-	if len(os.Args) < 2 {
-		log.Fatalf("a subcommand must be specified, run \"kuberpult-client help\" for more information")
+	if len(other) == 0 {
+		log.Fatalf("a subcommand must be specified")
 	}
 
-	subcommand := os.Args[1]
-	flags := os.Args[2:]
+	subcommand := other[0]
+	subflags := other[1:]
 
 	switch subcommand {
 	case "help":
 		fmt.Println(helpMessage)
 	case "release":
-		handleRelease(flags)
+		handleRelease(params.url, subflags)
 	default:
 		log.Fatalf("unknown subcommand %s", subcommand)
 	}
