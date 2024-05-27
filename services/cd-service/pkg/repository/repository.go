@@ -25,6 +25,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/freiheit-com/kuberpult/pkg/argocd"
+	"github.com/freiheit-com/kuberpult/pkg/argocd/v1alpha1"
+	"github.com/freiheit-com/kuberpult/pkg/db"
 	"io"
 	"net/http"
 	"os"
@@ -37,21 +40,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/freiheit-com/kuberpult/pkg/db"
-
 	"github.com/freiheit-com/kuberpult/pkg/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1alpha1 "github.com/freiheit-com/kuberpult/services/cd-service/pkg/argocd/v1alpha1"
 	"github.com/freiheit-com/kuberpult/services/cd-service/pkg/mapper"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	backoff "github.com/cenkalti/backoff/v4"
 	api "github.com/freiheit-com/kuberpult/pkg/api/v1"
 	"github.com/freiheit-com/kuberpult/pkg/auth"
+	"github.com/freiheit-com/kuberpult/pkg/config"
 	"github.com/freiheit-com/kuberpult/pkg/setup"
-	"github.com/freiheit-com/kuberpult/services/cd-service/pkg/argocd"
-	"github.com/freiheit-com/kuberpult/services/cd-service/pkg/config"
 	"github.com/freiheit-com/kuberpult/services/cd-service/pkg/fs"
 	"github.com/freiheit-com/kuberpult/services/cd-service/pkg/notify"
 	"github.com/freiheit-com/kuberpult/services/cd-service/pkg/sqlitestore"
@@ -727,7 +726,31 @@ func (r *repository) ProcessQueueOnce(ctx context.Context, e transformerBatch, c
 				return
 			}
 			// Apply the items
-			transformerBatches, err, changes = r.applyTransformerBatches(transformerBatches, false, nil)
+			if r.DB.ShouldUseEslTable() {
+				var txErr error
+				tx, txErr = r.DB.DB.BeginTx(ctx, nil)
+				if txErr != nil {
+					err = txErr
+					return
+				}
+				defer func(tx *sql.Tx) {
+					_ = tx.Rollback()
+				}(tx)
+			}
+			transformerBatches, err, changes = r.applyTransformerBatches(transformerBatches, false, tx)
+			if err != nil {
+				if r.DB.ShouldUseEslTable() {
+					logger.Sugar().Warnf("rolling back transaction because of %v", err)
+					_ = tx.Rollback()
+				}
+				return
+			}
+			if r.DB.ShouldUseEslTable() {
+				err = tx.Commit()
+				if err != nil {
+					return
+				}
+			}
 			if err != nil || len(transformerBatches) == 0 {
 				return
 			}
@@ -980,6 +1003,7 @@ func (r *repository) ApplyTransformersInternal(ctx context.Context, transaction 
 				}
 				return nil, nil, nil, &applyErr
 			}
+			logger.FromContext(ctx).Info("writing esl event...")
 			err = r.DB.DBWriteEslEventInternal(ctx, t.GetDBEventType(), transaction, t)
 			if err != nil {
 				return nil, nil, nil, &TransformerBatchApplyError{
@@ -1069,7 +1093,7 @@ func (r *repository) ApplyTransformers(ctx context.Context, transaction *sql.Tx,
 	if applyErr != nil {
 		return nil, applyErr
 	}
-	if err := r.afterTransform(ctx, *state); err != nil {
+	if err := r.afterTransform(ctx, *state, transaction); err != nil {
 		return nil, &TransformerBatchApplyError{TransformerError: fmt.Errorf("%s: %w", "failure in afterTransform", err), Index: -1}
 	}
 
@@ -1236,7 +1260,7 @@ func (r *repository) Push(ctx context.Context, pushAction func() error) error {
 	)
 }
 
-func (r *repository) afterTransform(ctx context.Context, state State) error {
+func (r *repository) afterTransform(ctx context.Context, state State, transaction *sql.Tx) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "afterTransform")
 	defer span.Finish()
 
@@ -1246,7 +1270,7 @@ func (r *repository) afterTransform(ctx context.Context, state State) error {
 	}
 	for env, config := range configs {
 		if config.ArgoCd != nil {
-			err := r.updateArgoCdApps(ctx, &state, env, config)
+			err := r.updateArgoCdApps(ctx, &state, env, config, transaction)
 			if err != nil {
 				return err
 			}
@@ -1255,11 +1279,11 @@ func (r *repository) afterTransform(ctx context.Context, state State) error {
 	return nil
 }
 
-func (r *repository) updateArgoCdApps(ctx context.Context, state *State, env string, config config.EnvironmentConfig) error {
+func (r *repository) updateArgoCdApps(ctx context.Context, state *State, env string, config config.EnvironmentConfig, transaction *sql.Tx) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "updateArgoCdApps")
 	defer span.Finish()
 	fs := state.Filesystem
-	if apps, err := state.GetEnvironmentApplications(env); err != nil {
+	if apps, err := state.GetEnvironmentApplications(ctx, transaction, env); err != nil {
 		return err
 	} else {
 		spanCollectData, _ := tracer.StartSpanFromContext(ctx, "collectData")
@@ -1274,7 +1298,7 @@ func (r *repository) updateArgoCdApps(ctx context.Context, state *State, env str
 			if err != nil {
 				return err
 			}
-			version, err := state.GetEnvironmentApplicationVersion(env, appName)
+			version, err := state.GetEnvironmentApplicationVersion(ctx, env, appName, transaction)
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					// if the app does not exist, we skip it
@@ -1720,8 +1744,20 @@ func (s *State) DeleteQueuedVersionIfExists(environment string, application stri
 	return s.DeleteQueuedVersion(environment, application)
 }
 
-func (s *State) GetEnvironmentApplicationVersion(environment, application string) (*uint64, error) {
-	return s.readSymlink(environment, application, "version")
+func (s *State) GetEnvironmentApplicationVersion(ctx context.Context, environment, application string, transaction *sql.Tx) (*uint64, error) {
+	if s.DBHandler.ShouldUseOtherTables() && transaction != nil {
+		depl, err := s.DBHandler.DBSelectDeployment(ctx, transaction, application, environment)
+		if err != nil {
+			return nil, err
+		}
+		if depl == nil || depl.Version == nil {
+			return nil, nil
+		}
+		var v = uint64(*depl.Version)
+		return &v, nil
+	} else {
+		return s.readSymlink(environment, application, "version")
+	}
 }
 
 // returns nil if there is no file
@@ -1796,6 +1832,20 @@ func (s *State) GetEnvironmentConfigsAndValidate(ctx context.Context) (map[strin
 	return envConfigs, err
 }
 
+func (s *State) GetEnvironmentConfigsSorted() (map[string]config.EnvironmentConfig, []string, error) {
+	configs, err := s.GetEnvironmentConfigs()
+	if err != nil {
+		return nil, nil, err
+	}
+	// sorting the environments to get a deterministic order of events:
+	var envNames []string = nil
+	for envName := range configs {
+		envNames = append(envNames, envName)
+	}
+	sort.Strings(envNames)
+	return configs, envNames, nil
+}
+
 func (s *State) GetEnvironmentConfigs() (map[string]config.EnvironmentConfig, error) {
 	if s.BootstrapMode {
 		result := map[string]config.EnvironmentConfig{}
@@ -1860,14 +1910,68 @@ func (s *State) GetEnvironmentConfigsForGroup(envGroup string) ([]string, error)
 	return groupEnvNames, nil
 }
 
-func (s *State) GetEnvironmentApplications(environment string) ([]string, error) {
-	appDir := s.Filesystem.Join("environments", environment, "applications")
-	return names(s.Filesystem, appDir)
+func (s *State) GetEnvironmentApplications(ctx context.Context, transaction *sql.Tx, environment string) ([]string, error) {
+	if s.DBHandler.ShouldUseOtherTables() && transaction != nil {
+		applications, err := s.DBHandler.DBSelectAllApplications(ctx, transaction)
+		if err != nil {
+			return nil, err
+		}
+		return applications.Apps, nil
+	} else {
+		appDir := s.Filesystem.Join("environments", environment, "applications")
+		return names(s.Filesystem, appDir)
+	}
 }
 
 // GetApplicationsFromFile returns apps from the filesystem
 func (s *State) GetApplicationsFromFile() ([]string, error) {
 	return names(s.Filesystem, "applications")
+}
+
+// GetCurrentlyDeployed returns all apps that have current deployments on any env from the filesystem
+func (s *State) GetCurrentlyDeployed(ctx context.Context, transaction *sql.Tx) (db.AllDeployments, error) {
+	ddSpan, ctx := tracer.StartSpanFromContext(ctx, "GetCurrentlyDeployed")
+	defer ddSpan.Finish()
+	var result = db.AllDeployments{}
+	_, envNames, err := s.GetEnvironmentConfigsSorted()
+	if err != nil {
+		return nil, err
+	}
+	for envNameIndex := range envNames {
+		envName := envNames[envNameIndex]
+		//env := envMap[envName]
+
+		if apps, err := s.GetEnvironmentApplications(ctx, transaction, envName); err != nil {
+			return nil, err
+		} else {
+			for _, appName := range apps {
+				var version *uint64
+				version, err = s.GetEnvironmentApplicationVersion(ctx, envName, appName, transaction)
+				if err != nil {
+					return nil, fmt.Errorf("could not get version of app %s in env %s", appName, envName)
+				}
+				var versionIntPtr *int64
+				if version == nil {
+					var versionInt = int64(*version)
+					versionIntPtr = &versionInt
+				} else {
+					versionIntPtr = nil
+				}
+				result = append(result, db.Deployment{
+					EslVersion: 0,
+					Created:    time.Time{},
+					App:        appName,
+					Env:        envName,
+					Version:    versionIntPtr,
+					Metadata: db.DeploymentMetadata{
+						DeployedByName:  "",
+						DeployedByEmail: "",
+					},
+				})
+			}
+		}
+	}
+	return result, nil
 }
 
 func (s *State) GetApplicationReleases(application string) ([]uint64, error) {
@@ -2100,7 +2204,7 @@ func readFile(fs billy.Filesystem, path string) ([]byte, error) {
 // ProcessQueue checks if there is something in the queue
 // deploys if necessary
 // deletes the queue
-func (s *State) ProcessQueue(ctx context.Context, fs billy.Filesystem, environment string, application string) (string, error) {
+func (s *State) ProcessQueue(ctx context.Context, transaction *sql.Tx, fs billy.Filesystem, environment string, application string) (string, error) {
 	queuedVersion, err := s.GetQueuedVersion(environment, application)
 	queueDeploymentMessage := ""
 	if err != nil {
@@ -2112,7 +2216,7 @@ func (s *State) ProcessQueue(ctx context.Context, fs billy.Filesystem, environme
 			return "", nil
 		}
 
-		currentlyDeployedVersion, err := s.GetEnvironmentApplicationVersion(environment, application)
+		currentlyDeployedVersion, err := s.GetEnvironmentApplicationVersion(ctx, environment, application, transaction)
 		if err != nil {
 			return "", err
 		}
