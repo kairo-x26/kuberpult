@@ -5,6 +5,8 @@ set -o pipefail
 # ./create-environments.sh [path/to/envs]
 # Note that this just creates files, it doesn't push in git
 
+cd "$(dirname "$0")"
+
 FRONTEND_PORT=8081 # see docker-compose.yml
 env=${1}
 
