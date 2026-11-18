@@ -4,7 +4,7 @@
 
 Unlike ArgoCD, Kuberpult is not triggered based on push to the repository. It is triggered by REST api instead (or ui which, in turn, calls the REST api).
 When a `/release` or `/api/release` endpoint is called with the manifest files, it saves that manifest in the database, and then the manifest-repo-export-service checks the repository for additional information (ArgoCD related), then commits and pushes the manifests to the repository which is then handled by ArgoCD.
-For full usage instructions, please check the [readme](https://github.com/freiheit-com/kuberpult/blob/main/readme.md).
+For full usage instructions, please check the [readme](https://github.com/kairo-x26/kuberpult/blob/main/readme.md).
 
 Kuberpult is split into two parts. The backend logic is in the `cd-service`. The frontend is also split into two parts (but they are both deployed as one microservice), the `frontend-service` that provides the REST backing for the ui, and the `ui-service` with the actual ui.
 The `cd-service` takes the URL of the repository to watch from the environment variable `KUBERPULT_GIT_URL` and the branch to watch from the environment variable `KUBERPULT_GIT_BRANCH`.
@@ -240,7 +240,7 @@ backend:
 
 - [docker](https://docs.docker.com/get-docker/) - for docker build for cd-service - optional
 - [node](https://nodejs.org/en/download/) - ensure you're using an LTS version (or use [nvm](https://github.com/nvm-sh/nvm#installing-and-updating))
-Ideally use the same version as in the [package.json](https://github.com/freiheit-com/kuberpult/blob/main/services/frontend-service/package.json#L42)
+Ideally use the same version as in the [package.json](https://github.com/kairo-x26/kuberpult/blob/main/services/frontend-service/package.json#L42)
 - [pnpm](https://pnpm.io/installation)
 
 ## Libraries required
@@ -306,7 +306,7 @@ To run the services: `make kuberpult`
 
 Releases are half-automated via GitHub actions.
 
-Go to the [release workflow pipeline](https://github.com/freiheit-com/kuberpult/actions/workflows/release.yml) and trigger "run pipeline" on the main branch.
+Go to the [release workflow pipeline](https://github.com/kairo-x26/kuberpult/actions/workflows/release.yml) and trigger "run pipeline" on the main branch.
 
 ## Changelog generation and semantic versioning
 Use [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) to

@@ -1,4 +1,4 @@
-![Main Pipeline](https://github.com/freiheit-com/kuberpult/actions/workflows/execution-plan-main.yml/badge.svg)
+![Main Pipeline](https://github.com/kairo-x26/kuberpult/actions/workflows/execution-plan-main.yml/badge.svg)
 
 
 # Kuberpult Readme for users
@@ -61,18 +61,18 @@ Please use the google registry to retrieve kuberpult images.
 
 ### GitHub Releases
 
-To use the helm chart, you can use [this url](https://github.com/freiheit-com/kuberpult/releases/download/0.4.55/kuberpult-0.4.55.tgz) (replace both versions with the current version!).
-You can see all releases on the [Releases page on GitHub](https://github.com/freiheit-com/kuberpult/releases)
+To use the helm chart, you can use [this url](https://github.com/kairo-x26/kuberpult/releases/download/0.4.55/kuberpult-0.4.55.tgz) (replace both versions with the current version!).
+You can see all releases on the [Releases page on GitHub](https://github.com/kairo-x26/kuberpult/releases)
 
 #### Helm Chart 
-See [values.yaml.tpl](https://github.com/freiheit-com/kuberpult/blob/main/charts/kuberpult/values.yaml.tpl) for details like default values.
+See [values.yaml.tpl](https://github.com/kairo-x26/kuberpult/blob/main/charts/kuberpult/values.yaml.tpl) for details like default values.
 
 Most important helm chart parameters are:
 * `git.url`: **required** - The url of the git manifest repository. This is a shared repo between Kuberpult and Argo CD.
 * `git.branch`: **recommended** - Branch name of the git repo. Must be the same one that Argo CD uses.
 * `ssh.identity`: **required** - The ssh private key to access the git manifest repo.
 * `ssh.known_hosts`: - The ssh key fingerprints of for your git provider (e.g. [GitHub](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints))
-* `pgp.keyring`: **recommended** - Additional security. Highly recommended if you do not us IAP. If enabled, calls to the REST API need to provide signatures with each call. See [create-release](https://github.com/freiheit-com/kuberpult/blob/main/infrastructure/scripts/create-testdata/create-release.sh) for an example.
+* `pgp.keyring`: **recommended** - Additional security. Highly recommended if you do not us IAP. If enabled, calls to the REST API need to provide signatures with each call. See [create-release](https://github.com/kairo-x26/kuberpult/blob/main/infrastructure/scripts/create-testdata/create-release.sh) for an example.
 * `ingress.create`: **recommended** - If you want to use your own ingress, set to false.
 * `ingress.iap`: **recommended** - We recommend to use IAP, but note that this a GCP-only feature.
 * `datadogTracing`: **recommended** - We recommend using Datadog for tracing. Requires the [Datadog daemons to run on the cluster](https://docs.datadoghq.com/containers/kubernetes/installation/?tab=operator).
